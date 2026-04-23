@@ -1,24 +1,29 @@
 #!/bin/bash
 
+# Install Linux Surface userspace support packages from the upstream Surface repo.
+# https://pkg.surfacelinux.com/fedora/
+
 set -ouex pipefail
 
-### Install packages
+# Keep temp files on container rootfs so kernel/dracut scriptlets avoid
+# cross-device hardlink failures during image build.
+export TMPDIR=/var/tmp
 
-# Packages can be installed from any enabled yum repo on the image.
-# RPMfusion repos are available by default in ublue main images
-# List of rpmfusion packages can be found here:
-# https://mirrors.rpmfusion.org/mirrorlist?path=free/fedora/updates/43/x86_64/repoview/index.html&protocol=https&redirect=1
+echo "::group:: === Installing Surface Packages ==="
 
-# this installs a package from fedora repos
-dnf5 install -y tmux 
+dnf5 config-manager addrepo --from-repofile=https://pkg.surfacelinux.com/fedora/linux-surface.repo
 
-# Use a COPR Example:
-#
-# dnf5 -y copr enable ublue-os/staging
-# dnf5 -y install package
-# Disable COPRs so they don't end up enabled on the final image:
-# dnf5 -y copr disable ublue-os/staging
+# Replace base kernel with surface kernel in single solver transaction.
+dnf5 -y swap --allowerasing kernel kernel-surface
 
-#### Example for enabling a System Unit File
+# Bluefin base can still keep stock kernel-core/modules installed.
+# Remove stock kernel package set so only surface modules remain for bootc lint.
+dnf5 -y remove kernel-core kernel-modules kernel-modules-core kernel-modules-extra || true
 
-systemctl enable podman.socket
+dnf5 -y install --allowerasing iptsd libwacom-surface libwacom-surface-utils surface-control
+
+echo "::endgroup::"
+
+find /etc/yum.repos.d/ -maxdepth 1 -type f -name '*.repo' ! -name 'fedora.repo' ! -name 'fedora-updates.repo' ! -name 'fedora-updates-testing.repo' -exec rm -f {} +
+rm -rf /tmp/* || true
+dnf5 clean all
